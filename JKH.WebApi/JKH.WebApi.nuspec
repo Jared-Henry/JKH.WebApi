@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package >
+  <metadata>
+    <id>JKH.WebApi</id>
+    <version>1.0.0-beta1</version>
+    <title>JKH Web API</title>
+    <authors>Jared Henry</authors>
+    <owners>Jared Henry</owners>
+    <licenseUrl>https://github.com/Jared-Henry/JKH.WebApi/blob/master/LICENSE</licenseUrl>
+    <projectUrl>https://github.com/Jared-Henry/JKH.WebApi</projectUrl>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <description>Utility library for creating Web API controllers that access data from Entity Framework.</description>    
+    <copyright>Copyright 2016</copyright>
+  </metadata>
+</package>
