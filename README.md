@@ -35,6 +35,8 @@ public class ThingController : JKH.WebApi.CrudController<ThingContext, Thing, Th
 public static class WebApiStartup
 {
   public static void Configure(HttpConfiguration config){
+    //Configure AutoMapper to automagically create missing type maps
+    AutoMapper.Mapper.Initialize(config => config.CreateMissingTypeMaps = true);
     //Configure Web API attribute routing to allow inheritance
     config.MapHttpAttributeRoutes(new JKH.WebApi.AllowInheritanceDirectRouteProvider());
   }
