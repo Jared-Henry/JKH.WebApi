@@ -9,6 +9,12 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Http;
+using AutoMapper.QueryableExtensions;
+using AutoMapper;
+using AutoMapper.Execution;
+using AutoMapper.Configuration;
+using AutoMapper.Mappers;
+using System.Data.Entity.Infrastructure;
 
 namespace JKH.WebApi
 {
@@ -19,9 +25,27 @@ namespace JKH.WebApi
     /// <typeparam name="TDbContext"><see cref="DbContext"/> used to interact with database</typeparam>
     public abstract class DbContextController<TDbContext> : ApiController where TDbContext : DbContext
     {
+        private static string[] ROW_VERSION_PROPERTY_NAMES = { "RowVersion", "Timestamp" };
+        private IDbContextFactory<TDbContext> _dbContextFactory;
+
+        public DbContextController() { }
+        public DbContextController(IDbContextFactory<TDbContext> dbContextFactory)
+        {
+            this._dbContextFactory = dbContextFactory;
+        }
+
+        /// <summary>
+        /// Gets a service from the dependency injection container.
+        /// </summary>
+        /// <typeparam name="TService">The type of service to request</typeparam>
+        /// <param name="throwIfNull">Throw an exception if no service is found</param>
+        /// <returns>A service of type <typeparamref name="TService"/>.</returns>
         protected virtual TService GetService<TService>(bool throwIfNull = true)
         {
-            var service = (TService)Request.GetDependencyScope().GetService(typeof(TService));
+            var scope = Request.GetDependencyScope();
+            if (scope == null)
+                throw new InvalidOperationException("No dependency scope is available for the current request.");
+            var service = (TService)scope.GetService(typeof(TService));
             if (service == null && throwIfNull)
                 throw new InvalidOperationException("Service not found: " + typeof(TService).FullName);
             return service;
@@ -30,8 +54,15 @@ namespace JKH.WebApi
         /// <summary>
         /// Create a <see cref="DbContext"/> to use for data operations.
         /// </summary>
-        /// <returns></returns>
-        protected abstract TDbContext CreateDbContext();
+        /// <returns>
+        /// Default implementation requests an <see cref="IDbContextFactory{TContext}"/> from <see cref="GetService{TService}(bool)"/>
+        /// </returns>
+        protected virtual TDbContext CreateDbContext()
+        {
+            if (_dbContextFactory == null)
+                _dbContextFactory = GetService<IDbContextFactory<TDbContext>>();
+            return _dbContextFactory.Create();
+        }
 
         /// <summary>
         /// Asynchronously retrieve data from the database.
@@ -65,81 +96,32 @@ namespace JKH.WebApi
         /// </summary>
         /// <param name="from">The object to map properties from</param>
         /// <param name="to">The object to map properties to</param>
-        /// <remarks>Default implementation maps all properties with the same name.</remarks>
+        /// <remarks>Default implementation uses <see cref="AutoMapper.Mapper"/></remarks>
         protected virtual void Map(object from, object to)
         {
-            if (from == null) throw new ArgumentNullException("from");
-            if (to == null) throw new ArgumentNullException("to");
-            var webModelProperties = from.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
-            foreach (var property in webModelProperties)
-            {
-                MapProperty(from, to, property);
-            }
-        }
-
-        /// <summary>
-        /// Map a property from one object to another.
-        /// </summary>
-        /// <param name="from">The object to map the property from</param>
-        /// <param name="to">The object to map the property to</param>
-        /// <param name="fromProperty">The property to map from</param>
-        protected virtual void MapProperty(object from, object to, PropertyInfo fromProperty)
-        {
-            var dataModelProperty = to.GetType().GetProperty(fromProperty.Name, BindingFlags.Public | BindingFlags.Instance);
-            if (dataModelProperty != null)
-            {
-                var value = fromProperty.GetValue(from);
-                dataModelProperty.SetValue(to, value);
-            }
-        }
+            Mapper.Map(from, to);
+        }        
 
         /// <summary>
         /// Create a selector expression.
         /// </summary>
         /// <typeparam name="TDataModel">Data model type</typeparam>
         /// <typeparam name="TWebModel">Web model type</typeparam>
-        /// <returns>Default implementation selects all properties with the same name.</returns>        
+        /// <returns>Default implementation uses <see cref="AutoMapper.Mapper"/></returns>        
         protected virtual Expression<Func<TDataModel, TWebModel>> CreateSelector<TDataModel, TWebModel>()
         {
-            var dataModelArgument = Expression.Parameter(typeof(TDataModel));
-            var memberBindings = CreateMemberBindings<TDataModel, TWebModel>(dataModelArgument);
-            var memberInit = Expression.MemberInit(Expression.New(typeof(TWebModel)), memberBindings);
-            return Expression.Lambda<Func<TDataModel, TWebModel>>(memberInit, dataModelArgument);
+            return Mapper.Configuration.ExpressionBuilder.CreateMapExpression<TDataModel, TWebModel>();
         }
 
-        /// <summary>
-        /// Create member bindings for use in <see cref="CreateSelector{TDataModel, TWebModel}"/>
-        /// </summary>
-        /// <typeparam name="TDataModel">The data model type</typeparam>
-        /// <typeparam name="TWebModel">The web model type</typeparam>
-        /// <param name="dataModel">The data model parameter expression</param>
-        /// <returns>A collection of <see cref="MemberBinding"/> objects</returns>
-        protected virtual ICollection<MemberBinding> CreateMemberBindings<TDataModel, TWebModel>(ParameterExpression dataModel)
+        protected virtual Task<TWebModel[]> GetArrayAsync<TDataModel, TWebModel>(Func<IQueryable<TDataModel>, IQueryable<TDataModel>> filter = null, CancellationToken cancellationToken = default(CancellationToken)) where TDataModel : class
         {
-            var webModelProperties = typeof(TWebModel).GetProperties(BindingFlags.Public | BindingFlags.Instance);
-            var memberBindings = new List<MemberBinding>();
-            foreach (var webModelProperty in webModelProperties)
+            return FromDbAsync(db =>
             {
-                var dataModelProperty = typeof(TDataModel).GetProperty(webModelProperty.Name, BindingFlags.Public | BindingFlags.Instance);
-                if (dataModelProperty != null)
-                {
-                    memberBindings.Add(Expression.Bind(webModelProperty, Expression.MakeMemberAccess(dataModel, dataModelProperty)));
-                }
-            }
-            return memberBindings;
-        }
-
-        /// <summary>
-        /// Asynchronously retrieve an array of objects from the database.
-        /// </summary>
-        /// <typeparam name="TDataModel">The data model type</typeparam>
-        /// <typeparam name="TWebModel">The web model type</typeparam>
-        /// <param name="predicate">The predicate used to filter results</param>
-        /// <param name="cancellationToken"></param>
-        /// <returns>A task that represents the asynchronous operation. The task result contains an array of type <typeparamref name="TWebModel"/>.</returns>
-        protected virtual Task<TWebModel[]> ToArrayAsync<TDataModel, TWebModel>(Expression<Func<TDataModel, bool>> predicate, CancellationToken cancellationToken) where TDataModel : class
-        {
-            return FromDbAsync(db => db.Set<TDataModel>().Where(predicate).Select(CreateSelector<TDataModel, TWebModel>()).ToArrayAsync(cancellationToken));
+                var set = db.Set<TDataModel>();
+                var query = filter == null ? set : filter(db.Set<TDataModel>());
+                var projection = query.Select(CreateSelector<TDataModel, TWebModel>());
+                return projection.ToArrayAsync(cancellationToken);
+            });
         }
 
         /// <summary>
@@ -150,9 +132,15 @@ namespace JKH.WebApi
         /// <param name="predicate">The predicate used to filter results</param>
         /// <param name="cancellationToken"></param>
         /// <returns>A task that represents the asynchronous operation. The task result contains a single object of type <typeparamref name="TWebModel"/>, or null.</returns>
-        protected virtual Task<TWebModel> SingleOrDefaultAsync<TDataModel, TWebModel>(Expression<Func<TDataModel, bool>> predicate, CancellationToken cancellationToken) where TDataModel : class
+        protected virtual Task<TWebModel> GetSingleOrDefaultAsync<TDataModel, TWebModel>(Expression<Func<TDataModel, bool>> predicate, CancellationToken cancellationToken = default(CancellationToken)) where TDataModel : class
         {
-            return FromDbAsync(db => db.Set<TDataModel>().Where(predicate).Select(CreateSelector<TDataModel, TWebModel>()).SingleOrDefaultAsync(cancellationToken));
+            return FromDbAsync(db =>
+            {
+                var set = db.Set<TDataModel>();
+                var query = set.Where(predicate);
+                var projection = query.Select(CreateSelector<TDataModel, TWebModel>());
+                return projection.SingleOrDefaultAsync(cancellationToken);
+            });
         }
 
         /// <summary>
@@ -169,6 +157,19 @@ namespace JKH.WebApi
             var propertyAccessor = Expression.Property(parameter, keyProperty);
             var equals = Expression.Equal(propertyAccessor, Expression.Constant(keyValue));
             return Expression.Lambda<Func<TDataModel, bool>>(equals, parameter);
+        }
+
+        protected PropertyInfo GetRowVersionProperty<TDataModel>(bool throwIfNull = true)
+        {
+            var found = (from prop in typeof(TDataModel).GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                         let timestampAttr = prop.GetCustomAttribute<TimestampAttribute>(true)
+                         where
+                            timestampAttr != null ||
+                            (ROW_VERSION_PROPERTY_NAMES.Contains(prop.Name) && prop.PropertyType == typeof(byte[]))
+                         select prop).SingleOrDefault();
+            if (found == null && throwIfNull)
+                throw new InvalidOperationException("Row version property not found: " + typeof(TDataModel).FullName);
+            return found;
         }
 
         /// <summary>
@@ -198,6 +199,110 @@ namespace JKH.WebApi
             if (keyProperties.Length == 0)
                 throw new InvalidOperationException("Key property not found.");
             return keyProperties[0];
+        }
+
+        protected virtual Task<TWebModel> GetAsync<TDataModel, TWebModel, TKey>(TKey key, CancellationToken cancellationToken = default(CancellationToken)) where TDataModel : class
+        {
+            return GetSingleOrDefaultAsync<TDataModel, TWebModel>(CreateKeyPredicate<TDataModel, TKey>(key), cancellationToken);
+        }
+
+        protected virtual Task<TWebModel[]> GetAllAsync<TDataModel, TWebModel>(CancellationToken cancellationToken = default(CancellationToken)) where TDataModel : class
+        {
+            return GetArrayAsync<TDataModel, TWebModel>(null, cancellationToken);
+        }
+
+        protected virtual Task<TWebModel> InsertAsync<TDataModel, TWebModel>(TWebModel webModel, CancellationToken cancellationToken = default(CancellationToken)) where TDataModel : class, new()
+        {
+            return FromDbAsync(async db =>
+            {
+                //Create new data model
+                var dataModel = new TDataModel();
+
+                //Map web model properties onto data model
+                Map(webModel, dataModel);
+
+                //Add data model to collection
+                db.Set<TDataModel>().Add(dataModel);
+
+                //Save changes
+                await db.SaveChangesAsync(cancellationToken);
+
+                //Return web model updated with ID
+                return CreateSelector<TDataModel, TWebModel>().Compile().Invoke(dataModel);
+            });
+        }
+
+        protected virtual Task<TWebModel> UpdateAsync<TDataModel, TWebModel, TKey>(TKey key, TWebModel webModel, CancellationToken cancellationToken = default(CancellationToken)) where TDataModel : class, new()
+        {
+            return FromDbAsync(async db =>
+            {
+                //Get key and row version properties      
+                var keyProperty = GetKeyProperty<TDataModel>();
+                var rowVersionProperty = GetRowVersionProperty<TDataModel>(throwIfNull: false);
+
+                //Map to temp model to get key and row version values. Validate key
+                var tempModel = new TDataModel();
+                Map(webModel, tempModel);
+                var modelId = (TKey)keyProperty.GetValue(tempModel);
+                if (!modelId.Equals(key))
+                    throw new ArgumentException("Model ID does not match ID from REST URL.", "id");
+
+                //Create data model for attachment to context and set id
+                var dataModel = new TDataModel();
+                keyProperty.SetValue(dataModel, key);
+
+                //If row version property, the set that also
+                if (rowVersionProperty != null)
+                {
+                    var rowVersion = rowVersionProperty.GetValue(tempModel);
+                    rowVersionProperty.SetValue(dataModel, rowVersion);
+                }
+
+                //Attach data model BEFORE mapping properties from web model. This
+                //ensures that only changed properties will be updated.
+                db.Entry<TDataModel>(dataModel).State = EntityState.Unchanged;
+
+                //Map web model properties to data model
+                Map(webModel, dataModel);
+
+                //Save changes
+                await db.SaveChangesAsync(cancellationToken);
+
+                return CreateSelector<TDataModel, TWebModel>().Compile().Invoke(dataModel);
+            });
+        }
+
+        protected virtual Task DeleteAsync<TDataModel, TWebModel, TKey>(TKey key, TWebModel webModel, CancellationToken cancellationToken = default(CancellationToken)) where TDataModel : class, new()
+        {
+            return UsingDbAsync(async db =>
+            {
+                //Get key property and create data model to be deleted
+                var keyProperty = GetKeyProperty<TDataModel>();
+                var dataModel = new TDataModel();
+                if (webModel == null)
+                {
+                    //Set key from URL
+                    keyProperty.SetValue(dataModel, key);
+                }
+                else
+                {
+                    //Map web model properties onto data model
+                    Map(webModel, dataModel);
+                    //Check that key values in URL and body are the same
+                    var keyValue = (TKey)keyProperty.GetValue(dataModel);
+                    if (!keyValue.Equals(key))
+                        throw CreateUrlKeyDiffersFromBodyKeyException();
+                }
+                //Attach data model as deleted
+                db.Entry(dataModel).State = EntityState.Deleted;
+                //Save changes
+                await db.SaveChangesAsync(cancellationToken);
+            });
+        }
+
+        protected virtual Exception CreateUrlKeyDiffersFromBodyKeyException()
+        {
+            return new InvalidOperationException("Key in URL differs from key in body.");
         }
     }
 }

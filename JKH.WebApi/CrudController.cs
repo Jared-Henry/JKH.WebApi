@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Http;
+using AutoMapper;
+using System.Data.Entity.Infrastructure;
 
 namespace JKH.WebApi
 {
@@ -13,82 +15,43 @@ namespace JKH.WebApi
     /// <typeparam name="TWebModel">The web DTO returned to the client.</typeparam>
     /// <typeparam name="TDataModel">The data DTO returned from the database.</typeparam>
     /// <typeparam name="TDbContext">The <see cref="DbContext"/> to use for data access.</typeparam>
-    public abstract class CrudController<TWebModel, TDataModel, TDbContext> : DbContextController<TDbContext> where TDbContext : DbContext where TDataModel : class, new()
+    public abstract class CrudController<TDbContext, TDataModel, TKey, TWebModel> : DbContextController<TDbContext> where TDbContext : DbContext where TDataModel : class, new()
     {
+        public CrudController() { }
+        public CrudController(IDbContextFactory<TDbContext> dbContextFactory) : base(dbContextFactory) { }
+
         [HttpGet, Route]
-        public async virtual Task<TWebModel[]> GetAll(CancellationToken cancellationToken)
+        public virtual Task<TWebModel[]> GetAll(CancellationToken cancellationToken = default(CancellationToken))
         {
-            return await FromDbAsync(async db =>
-            {
-                return await db.Set<TDataModel>().Select(CreateSelector<TDataModel, TWebModel>()).ToArrayAsync(cancellationToken);
-            });
+            return GetAllAsync<TDataModel, TWebModel>(cancellationToken);
         }
 
         [HttpGet]
-        [Route("{id}")]
-        public virtual Task<TWebModel> Get(int id, CancellationToken cancellationToken)
+        [Route("{key}")]
+        public virtual Task<TWebModel> Get(TKey key, CancellationToken cancellationToken = default(CancellationToken))
         {
-            return SingleOrDefaultAsync<TDataModel, TWebModel>(CreateKeyPredicate<TDataModel, int>(id), cancellationToken);
+            return GetAsync<TDataModel, TWebModel, TKey>(key, cancellationToken);
         }
 
         [HttpPut]
-        [Route("{id}")]
-        public async virtual Task Update(int id, [FromBody]TWebModel webModel, CancellationToken cancellationToken)
+        [Route("{key}")]
+        public virtual Task<TWebModel> Update(TKey key, [FromBody]TWebModel webModel, CancellationToken cancellationToken = default(CancellationToken))
         {
-            await UsingDbAsync(async db =>
-            {
-                //Get data model from db
-                var dataModel = await db.Set<TDataModel>().SingleOrDefaultAsync(CreateKeyPredicate<TDataModel, int>(id), cancellationToken);
-
-                //Map web model properties onto data model
-                Map(webModel, dataModel);
-
-                //Save changes
-                await db.SaveChangesAsync(cancellationToken);
-            });
+            return UpdateAsync<TDataModel, TWebModel, TKey>(key, webModel, cancellationToken);
         }
 
         [HttpPost]
         [Route]
-        public async virtual Task<TWebModel> Insert([FromBody]TWebModel webModel, CancellationToken cancellationToken)
+        public virtual Task<TWebModel> Insert([FromBody]TWebModel webModel, CancellationToken cancellationToken = default(CancellationToken))
         {
-            return await FromDbAsync(async db =>
-            {
-                //Create new data model
-                var dataModel = new TDataModel();
-
-                //Map web model properties onto data model
-                Map(webModel, dataModel);
-
-                //Add data model to collection
-                db.Set<TDataModel>().Add(dataModel);
-
-                //Save changes
-                await db.SaveChangesAsync(cancellationToken);
-
-                //Return web model updated with ID
-                return CreateSelector<TDataModel, TWebModel>().Compile().Invoke(dataModel);
-            });
+            return InsertAsync<TDataModel, TWebModel>(webModel, cancellationToken);
         }
 
         [HttpDelete]
-        [Route("{id}")]
-        public async virtual Task Delete(int id, CancellationToken cancellationToken)
+        [Route("{key}")]
+        public virtual Task Delete(TKey key, [FromBody]TWebModel webModel, CancellationToken cancellationToken = default(CancellationToken))
         {
-            await UsingDbAsync(async db =>
-            {
-                //Get data model from db
-                var set = db.Set<TDataModel>();
-                var dataModel = await set.SingleOrDefaultAsync(CreateKeyPredicate<TDataModel, int>(id), cancellationToken);
-                if (dataModel == null)
-                    throw new ArgumentException("Id does not exist in database.");
-
-                //Delete data model from collection
-                set.Remove(dataModel);
-
-                //Save changes
-                await db.SaveChangesAsync(cancellationToken);
-            });
+            return DeleteAsync<TDataModel, TWebModel, TKey>(key, webModel, cancellationToken);
         }
     }
 }
