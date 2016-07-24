@@ -94,13 +94,19 @@ namespace JKH.WebApi
         /// <summary>
         /// Map properties from one object to another.
         /// </summary>
-        /// <param name="from">The object to map properties from</param>
-        /// <param name="to">The object to map properties to</param>
+        /// <param name="source">The object to map properties from</param>
+        /// <param name="destination">The object to map properties to</param>
+        /// <returns>A collection of destination properties that were mapped.</returns>
         /// <remarks>Default implementation uses <see cref="AutoMapper.Mapper"/></remarks>
-        protected virtual void Map(object from, object to)
+        protected virtual ICollection<MemberInfo> Map(object source, object destination)
         {
-            Mapper.Map(from, to);
-        }        
+            var map = Mapper.Configuration.ResolveTypeMap(source.GetType(), destination.GetType());
+            if (map == null)
+                throw new InvalidOperationException("Could not resolve type map.");
+            Mapper.Map(source, destination);
+            return (from p in map.GetPropertyMaps()
+                    select p.DestinationProperty).ToArray();
+        }     
 
         /// <summary>
         /// Create a selector expression.
@@ -260,18 +266,26 @@ namespace JKH.WebApi
 
                 //Attach data model BEFORE mapping properties from web model. This
                 //ensures that only changed properties will be updated.
-                db.Entry<TDataModel>(dataModel).State = EntityState.Unchanged;
+                var entry = db.Entry<TDataModel>(dataModel);
+                entry.State = EntityState.Unchanged;
 
                 //Map web model properties to data model
-                Map(webModel, dataModel);
+                var destinationProperties = Map(webModel, dataModel);
+
+                //Ensure null or default values are marked as modified
+                foreach (var destinationProperty in destinationProperties)
+                {
+                    if (destinationProperty != keyProperty && destinationProperty != rowVersionProperty)
+                        entry.Property(destinationProperty.Name).IsModified = true;
+                }
 
                 //Save changes
                 await db.SaveChangesAsync(cancellationToken);
 
                 return CreateSelector<TDataModel, TWebModel>().Compile().Invoke(dataModel);
             });
-        }
-
+        }    
+        
         protected virtual Task DeleteAsync<TDataModel, TWebModel, TKey>(TKey key, TWebModel webModel, CancellationToken cancellationToken = default(CancellationToken)) where TDataModel : class, new()
         {
             return UsingDbAsync(async db =>

@@ -97,5 +97,19 @@ namespace JKH.WebApi.Test
             thing.Name = GetText();
             await controller.Update(thing.Id, thing);
         }
+
+        [TestMethod]
+        public async Task SetPropertyToNull()
+        {
+            var thing = await controller.Insert(new ThingWebModel() { Name = GetText(), Description = GetText() });
+            thing.Description = null;
+            var updatedThing = await controller.Update(thing.Id, thing);
+            using (var db = new ThingContext())
+            {
+                var dataThing = await db.Things.SingleAsync(t => t.Id == thing.Id);
+                Assert.IsNotNull(dataThing);
+                Assert.IsNull(dataThing.Description);
+            }
+        }
     }
 }
