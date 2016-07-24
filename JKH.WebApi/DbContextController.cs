@@ -187,19 +187,13 @@ namespace JKH.WebApi
         protected PropertyInfo GetKeyProperty<TDataModel>()
         {
             var type = typeof(TDataModel);
+            var typeNameLower = type.Name.ToLower();
             var properties = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
             var keyProperties = (from prop in properties
                                  let key = prop.GetCustomAttribute<KeyAttribute>()
-                                 where key != null
-                                 select prop).ToArray();
-            if (keyProperties.Length == 0)
-            {
-                var typeNameLower = type.Name.ToLower();
-                keyProperties = (from prop in properties
                                  let nameLower = prop.Name.ToLower()
-                                 where nameLower == "id" || nameLower == typeNameLower + "id"
-                                 select prop).ToArray();
-            }
+                                 where key != null || nameLower == "id" || nameLower == typeNameLower + "id"
+                                 select prop).ToArray();            
             if (keyProperties.Length > 1)
                 throw new InvalidOperationException("Multiple key properties found.");
             if (keyProperties.Length == 0)
