@@ -25,9 +25,9 @@ public class ThingDto
 }
 //Web API Controller
 [RoutePrefix("api/things/{key}")
-public class ThingController : JKH.WebApi.CrudController<ThingContext, Thing, ThingDto, int>
+public class ThingController : JKH.WebApi.RestController<ThingContext, Thing, ThingDto, int>
 {
-  //Inherits RESTful methods from CrudController
+  //Inherits RESTful methods from RestController
   //Override inherited methods as needed, but out of the box
   //you get Get, GetAll, Insert, Update, Delete
 }
