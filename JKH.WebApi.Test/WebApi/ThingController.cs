@@ -9,7 +9,7 @@ using System.Data.Entity.Infrastructure;
 
 namespace JKH.WebApi.Test.WebApi
 {
-    public class ThingController : CrudController<ThingContext, Thing, ThingWebModel, int>
+    public class ThingController : RestController<ThingContext, Thing, ThingWebModel, int>
     {
         public ThingController(IDbContextFactory<ThingContext> dbContextFactory) : base(dbContextFactory) { }
     }

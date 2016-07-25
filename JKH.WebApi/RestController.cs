@@ -15,10 +15,10 @@ namespace JKH.WebApi
     /// <typeparam name="TWebModel">The web DTO returned to the client.</typeparam>
     /// <typeparam name="TDataModel">The data DTO returned from the database.</typeparam>
     /// <typeparam name="TDbContext">The <see cref="DbContext"/> to use for data access.</typeparam>
-    public abstract class CrudController<TDbContext, TDataModel, TWebModel, TKey> : DbContextController<TDbContext> where TDbContext : DbContext where TDataModel : class, new()
+    public abstract class RestController<TDbContext, TDataModel, TWebModel, TKey> : DbContextController<TDbContext> where TDbContext : DbContext where TDataModel : class, new()
     {
-        public CrudController() { }
-        public CrudController(IDbContextFactory<TDbContext> dbContextFactory) : base(dbContextFactory) { }
+        public RestController() { }
+        public RestController(IDbContextFactory<TDbContext> dbContextFactory) : base(dbContextFactory) { }
 
         [HttpGet, Route]
         public virtual Task<TWebModel[]> GetAll(CancellationToken cancellationToken = default(CancellationToken))

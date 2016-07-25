@@ -66,9 +66,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AllowInheritanceDirectRouteProvider.cs" />
-    <Compile Include="CrudController.cs" />
     <Compile Include="DbContextController.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="RestController.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="JKH.WebApi.nuspec" />
